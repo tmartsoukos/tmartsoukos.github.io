@@ -2,15 +2,21 @@
 -- CoachPad — Row Level Security και RPC
 -- ============================================================
 --
--- Μοντέλο πρόσβασης: μία κοινή ομάδα. Όποιος συνδεθεί βλέπει και
--- αλλάζει τα ίδια δεδομένα — δεν υπάρχουν κωδικοί πρόσκλησης ούτε
--- ρόλοι. Το φράγμα είναι η ίδια η σύνδεση: ο ρόλος `anon` (δηλαδή
--- ο μη συνδεδεμένος επισκέπτης) δεν έχει κανένα policy, άρα δεν
--- διαβάζει και δεν γράφει τίποτα.
+-- Μοντέλο πρόσβασης: μία ομάδα ανά λογαριασμό.
+--
+-- Κάθε χρήστης βλέπει και αλλάζει ΜΟΝΟ τα δικά του δεδομένα. Δεν
+-- υπάρχουν κωδικοί πρόσκλησης ούτε ρόλοι: αν δύο προπονητές θέλουν
+-- να δουλέψουν στην ίδια ομάδα, συνδέονται με τον ίδιο λογαριασμό.
+--
+-- Η ιδιοκτησία κρέμεται από το teams.created_by. Οι πίνακες με
+-- team_id το ελέγχουν απευθείας· οι πίνακες που κρέμονται από
+-- προπόνηση (attendance, session_drills, splits) περνούν από τη
+-- συνάρτηση private.session_owner().
 --
 -- ΣΗΜΑΝΤΙΚΟ: το publishable key ενσωματώνεται στο bundle του
--- browser. Το ότι ο anon δεν έχει policies είναι αυτό ακριβώς που
--- κρατά τα δεδομένα κλειστά.
+-- browser. Όλα τα policies αφορούν αποκλειστικά τον ρόλο
+-- `authenticated` — ο `anon` δεν έχει κανένα, άρα ο μη συνδεδεμένος
+-- επισκέπτης δεν διαβάζει και δεν γράφει τίποτα.
 -- ============================================================
 
 alter table public.teams          enable row level security;
@@ -22,64 +28,107 @@ alter table public.session_drills enable row level security;
 alter table public.splits         enable row level security;
 
 -- ------------------------------------------------------------
--- teams — η μοναδική ομάδα· δεν διαγράφεται από τον client
+-- Ιδιωτικό schema — μη προσβάσιμο μέσω του REST API
+-- ------------------------------------------------------------
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to authenticated, service_role;
+
+-- Ο ιδιοκτήτης της ομάδας στην οποία ανήκει μια προπόνηση
+create or replace function private.session_owner(s uuid)
+returns uuid
+language sql stable security definer set search_path = public
+as $$
+  select t.created_by
+  from public.sessions s2
+  join public.teams t on t.id = s2.team_id
+  where s2.id = s;
+$$;
+
+revoke all on function private.session_owner(uuid) from public;
+grant execute on function private.session_owner(uuid) to authenticated;
+
+-- ------------------------------------------------------------
+-- teams — η ομάδα του χρήστη· δεν διαγράφεται από τον client
 -- ------------------------------------------------------------
 drop policy if exists teams_select on public.teams;
 create policy teams_select on public.teams
-  for select to authenticated using (true);
+  for select to authenticated
+  using (created_by = auth.uid());
 
 drop policy if exists teams_insert on public.teams;
 create policy teams_insert on public.teams
-  for insert to authenticated with check (created_by = auth.uid());
+  for insert to authenticated
+  with check (created_by = auth.uid());
 
 drop policy if exists teams_update on public.teams;
 create policy teams_update on public.teams
-  for update to authenticated using (true) with check (true);
+  for update to authenticated
+  using (created_by = auth.uid())
+  with check (created_by = auth.uid());
 
 -- ------------------------------------------------------------
--- Δεδομένα προπόνησης — κοινά για όλους τους συνδεδεμένους
+-- players / sessions — μέσω του team_id
 -- ------------------------------------------------------------
 drop policy if exists players_all on public.players;
 create policy players_all on public.players
-  for all to authenticated using (true) with check (true);
+  for all to authenticated
+  using (team_id in (select id from public.teams where created_by = auth.uid()))
+  with check (team_id in (select id from public.teams where created_by = auth.uid()));
 
 drop policy if exists sessions_all on public.sessions;
 create policy sessions_all on public.sessions
-  for all to authenticated using (true) with check (true);
+  for all to authenticated
+  using (team_id in (select id from public.teams where created_by = auth.uid()))
+  with check (team_id in (select id from public.teams where created_by = auth.uid()));
 
+-- ------------------------------------------------------------
+-- attendance / session_drills / splits — μέσω της γονικής προπόνησης
+-- ------------------------------------------------------------
 drop policy if exists attendance_all on public.attendance;
 create policy attendance_all on public.attendance
-  for all to authenticated using (true) with check (true);
+  for all to authenticated
+  using (private.session_owner(session_id) = auth.uid())
+  with check (private.session_owner(session_id) = auth.uid());
 
 drop policy if exists session_drills_all on public.session_drills;
 create policy session_drills_all on public.session_drills
-  for all to authenticated using (true) with check (true);
+  for all to authenticated
+  using (private.session_owner(session_id) = auth.uid())
+  with check (private.session_owner(session_id) = auth.uid());
 
 drop policy if exists splits_all on public.splits;
 create policy splits_all on public.splits
-  for all to authenticated using (true) with check (true);
+  for all to authenticated
+  using (private.session_owner(session_id) = auth.uid())
+  with check (private.session_owner(session_id) = auth.uid());
 
 -- ------------------------------------------------------------
--- drills — οι έτοιμες ασκήσεις μένουν αμετάβλητες
+-- drills — οι έτοιμες ασκήσεις είναι κοινές και μόνο για ανάγνωση
 -- ------------------------------------------------------------
 drop policy if exists drills_select on public.drills;
 create policy drills_select on public.drills
-  for select to authenticated using (true);
+  for select to authenticated
+  using (is_preset or team_id in (select id from public.teams where created_by = auth.uid()));
 
 drop policy if exists drills_insert on public.drills;
 create policy drills_insert on public.drills
-  for insert to authenticated with check (not is_preset);
+  for insert to authenticated
+  with check (not is_preset and team_id in (select id from public.teams where created_by = auth.uid()));
 
 drop policy if exists drills_update on public.drills;
 create policy drills_update on public.drills
-  for update to authenticated using (not is_preset) with check (not is_preset);
+  for update to authenticated
+  using (not is_preset and team_id in (select id from public.teams where created_by = auth.uid()))
+  with check (not is_preset and team_id in (select id from public.teams where created_by = auth.uid()));
 
 drop policy if exists drills_delete on public.drills;
 create policy drills_delete on public.drills
-  for delete to authenticated using (not is_preset);
+  for delete to authenticated
+  using (not is_preset and team_id in (select id from public.teams where created_by = auth.uid()));
 
 -- ------------------------------------------------------------
--- RPC: η κοινή ομάδα, με δημιουργία στην πρώτη σύνδεση
+-- RPC: η ομάδα του χρήστη, με δημιουργία στην πρώτη σύνδεση
 -- ------------------------------------------------------------
 create or replace function public.default_team()
 returns public.teams
@@ -92,7 +141,11 @@ begin
     raise exception 'AUTH_REQUIRED';
   end if;
 
-  select * into t from public.teams order by created_at limit 1;
+  select * into t
+  from public.teams
+  where created_by = auth.uid()
+  order by created_at
+  limit 1;
 
   if t.id is null then
     insert into public.teams (name, created_by)
@@ -108,7 +161,8 @@ revoke all on function public.default_team() from public, anon;
 grant execute on function public.default_team() to authenticated;
 
 -- ------------------------------------------------------------
--- Realtime — αλλαγές από άλλη συσκευή φαίνονται αμέσως
+-- Realtime — αλλαγές από άλλη συσκευή του ίδιου λογαριασμού
+-- φαίνονται αμέσως
 -- ------------------------------------------------------------
 do $$
 begin
