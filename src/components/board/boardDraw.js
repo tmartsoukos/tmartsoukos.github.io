@@ -69,6 +69,20 @@ export function drawObject(ctx, obj, w, h) {
     ctx.textBaseline = 'middle'
     ctx.fillText(String(obj.label), x, y + 1)
   }
+
+  // Όνομα παίκτη κάτω από το σύμβολο, με μαύρο περίγραμμα ώστε να
+  // διαβάζεται πάνω στο γρασίδι.
+  if (obj.name) {
+    ctx.font = `bold ${Math.round(r * 0.75)}px system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    ctx.lineWidth = Math.max(2, r * 0.22)
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)'
+    ctx.lineJoin = 'round'
+    ctx.strokeText(obj.name, x, y + r + 2)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(obj.name, x, y + r + 2)
+  }
 }
 
 export function drawArrow(ctx, arrow, w, h) {

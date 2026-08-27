@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Mail, Lock, ShieldCheck } from 'lucide-react'
+import { Loader2, Mail, Lock, ShieldCheck, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/ui/Button'
 
@@ -9,19 +9,26 @@ function greekError(message = '') {
   if (m.includes('invalid login')) return 'Λάθος email ή κωδικός.'
   if (m.includes('already registered')) return 'Υπάρχει ήδη λογαριασμός με αυτό το email.'
   if (m.includes('password should be')) return 'Ο κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες.'
+  if (m.includes('rate limit') || m.includes('too many')) return 'Πολλές προσπάθειες. Δοκίμασε σε λίγο.'
   if (m.includes('email')) return 'Μη έγκυρο email.'
   if (m.includes('failed to fetch')) return 'Δεν υπάρχει σύνδεση στο διαδίκτυο.'
   return 'Κάτι πήγε στραβά. Δοκίμασε ξανά.'
 }
 
 export default function Login() {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, requestPasswordReset } = useAuth()
   const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [info, setInfo] = useState(null)
+
+  function switchMode(next) {
+    setMode(next)
+    setError(null)
+    setInfo(null)
+  }
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -31,12 +38,15 @@ export default function Login() {
     try {
       if (mode === 'signin') {
         await signIn(email, password)
-      } else {
+      } else if (mode === 'signup') {
         const { needsConfirmation } = await signUp(email, password)
         if (needsConfirmation) {
           setInfo('Στάλθηκε email επιβεβαίωσης. Άνοιξέ το και μετά συνδέσου.')
           setMode('signin')
         }
+      } else {
+        await requestPasswordReset(email)
+        setInfo('Αν υπάρχει λογαριασμός με αυτό το email, στάλθηκε σύνδεσμος επαναφοράς.')
       }
     } catch (err) {
       setError(greekError(err.message))
@@ -45,6 +55,8 @@ export default function Login() {
     }
   }
 
+  const isForgot = mode === 'forgot'
+
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col justify-center px-5 py-10">
       <div className="mb-8 text-center">
@@ -52,28 +64,31 @@ export default function Login() {
           <ShieldCheck size={34} className="text-bg" />
         </div>
         <h1 className="text-3xl font-black">CoachPad</h1>
-        <p className="mt-1 text-sm text-muted">Παρουσιολόγιο, ομάδες και πλάνο προπόνησης.</p>
+        <p className="mt-1 text-sm text-muted">
+          {isForgot
+            ? 'Θα σου στείλουμε σύνδεσμο για νέο κωδικό.'
+            : 'Παρουσιολόγιο, ομάδες και πλάνο προπόνησης.'}
+        </p>
       </div>
 
-      <div className="mb-5 flex rounded-xl border border-line bg-surface p-1">
-        {[
-          ['signin', 'Σύνδεση'],
-          ['signup', 'Εγγραφή'],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => {
-              setMode(value)
-              setError(null)
-            }}
-            className={`min-h-11 flex-1 rounded-lg text-sm font-bold ${
-              mode === value ? 'bg-brand text-bg' : 'text-muted'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {!isForgot && (
+        <div className="mb-5 flex rounded-xl border border-line bg-surface p-1">
+          {[
+            ['signin', 'Σύνδεση'],
+            ['signup', 'Εγγραφή'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => switchMode(value)}
+              className={`min-h-11 flex-1 rounded-lg text-sm font-bold ${
+                mode === value ? 'bg-brand text-bg' : 'text-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <label className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4">
@@ -89,19 +104,21 @@ export default function Login() {
           />
         </label>
 
-        <label className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4">
-          <Lock size={18} className="shrink-0 text-muted" />
-          <input
-            type="password"
-            required
-            minLength={6}
-            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-            placeholder="Κωδικός"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="min-h-14 w-full bg-transparent text-base outline-none"
-          />
-        </label>
+        {!isForgot && (
+          <label className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4">
+            <Lock size={18} className="shrink-0 text-muted" />
+            <input
+              type="password"
+              required
+              minLength={6}
+              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+              placeholder="Κωδικός"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="min-h-14 w-full bg-transparent text-base outline-none"
+            />
+          </label>
+        )}
 
         {error && (
           <p className="rounded-xl border border-absent/40 bg-absent/10 px-4 py-3 text-sm text-absent">
@@ -116,9 +133,26 @@ export default function Login() {
 
         <Button type="submit" size="lg" disabled={busy} className="mt-2">
           {busy && <Loader2 size={18} className="animate-spin" />}
-          {mode === 'signin' ? 'Σύνδεση' : 'Δημιουργία λογαριασμού'}
+          {mode === 'signin' && 'Σύνδεση'}
+          {mode === 'signup' && 'Δημιουργία λογαριασμού'}
+          {mode === 'forgot' && 'Αποστολή συνδέσμου'}
         </Button>
       </form>
+
+      {mode === 'signin' && (
+        <button onClick={() => switchMode('forgot')} className="mx-auto mt-6 text-sm text-muted">
+          Ξέχασα τον κωδικό μου
+        </button>
+      )}
+
+      {isForgot && (
+        <button
+          onClick={() => switchMode('signin')}
+          className="mx-auto mt-6 flex items-center gap-1.5 text-sm text-muted"
+        >
+          <ArrowLeft size={16} /> Επιστροφή στη σύνδεση
+        </button>
+      )}
     </div>
   )
 }

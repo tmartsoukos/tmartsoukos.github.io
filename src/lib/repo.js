@@ -16,7 +16,7 @@
 
 import { supabase } from './supabase'
 import { readLocal, writeLocal, keys } from './db'
-import { enqueue, flushOutbox } from './outbox'
+import { enqueue, flushOutbox, pendingOps } from './outbox'
 
 // ------------------------------------------------------------
 // Βοηθητικά
@@ -52,6 +52,27 @@ function byName(a, b) {
   return a.full_name.localeCompare(b.full_name, 'el')
 }
 
+/**
+ * Συγχωνεύει την απάντηση του server με τις αλλαγές που περιμένουν
+ * ακόμη στην ουρά.
+ *
+ * Χωρίς αυτό υπάρχει κούρσα: ο χρήστης αλλάζει δύο φορές γρήγορα,
+ * η απάντηση της πρώτης εγγραφής επιστρέφει μετά τη δεύτερη τοπική
+ * αλλαγή και την πατάει — η τιμή «αναπηδά» στην προηγούμενη.
+ * Για όσο μια γραμμή έχει εκκρεμή εγγραφή, η τοπική εκδοχή είναι η
+ * σωστή.
+ */
+function mergePending(table, serverRows, localRows) {
+  const { upserts, deletes } = pendingOps(table)
+  if (upserts.size === 0 && deletes.size === 0) return serverRows
+
+  const merged = serverRows.filter((row) => !upserts.has(row.id) && !deletes.has(row.id))
+  localRows.forEach((row) => {
+    if (upserts.has(row.id)) merged.push(row)
+  })
+  return merged
+}
+
 /** Γράφει τοπικά, βάζει στην ουρά και προσπαθεί άμεσο συγχρονισμό. */
 function queue(table, row, onConflict = 'id') {
   enqueue({ table, kind: 'upsert', row, onConflict })
@@ -78,8 +99,9 @@ export async function fetchPlayers(teamId) {
     .eq('team_id', teamId)
     .order('full_name')
   if (error) throw error
-  writeLocal(keys.players(teamId), data)
-  return data
+  const merged = mergePending('players', data ?? [], cachedPlayers(teamId)).sort(byName)
+  writeLocal(keys.players(teamId), merged)
+  return merged
 }
 
 export function savePlayer(teamId, input) {
@@ -121,8 +143,11 @@ export async function fetchSessions(teamId, limit = 120) {
     .order('session_date', { ascending: false })
     .limit(limit)
   if (error) throw error
-  writeLocal(keys.sessions(teamId), data)
-  return data
+  const merged = mergePending('sessions', data ?? [], cachedSessions(teamId)).sort((a, b) =>
+    b.session_date.localeCompare(a.session_date),
+  )
+  writeLocal(keys.sessions(teamId), merged)
+  return merged
 }
 
 /**
@@ -166,8 +191,9 @@ export function cachedAttendance(sessionId) {
 export async function fetchAttendance(sessionId) {
   const { data, error } = await supabase.from('attendance').select('*').eq('session_id', sessionId)
   if (error) throw error
-  writeLocal(keys.attendance(sessionId), data)
-  return data
+  const merged = mergePending('attendance', data ?? [], cachedAttendance(sessionId))
+  writeLocal(keys.attendance(sessionId), merged)
+  return merged
 }
 
 /** Όλες οι παρουσίες της ομάδας — για τα στατιστικά. */
@@ -190,6 +216,23 @@ export async function fetchTeamAttendance(teamId) {
 
 export function cachedTeamAttendance(teamId) {
   return readLocal(`cache:attendance_all:${teamId}`, []) ?? []
+}
+
+/** Όλες οι ασκήσεις πλάνου της ομάδας — για το ιστορικό προπονήσεων. */
+export async function fetchTeamSessionDrills(teamId) {
+  const { data, error } = await supabase
+    .from('session_drills')
+    .select('*, sessions!inner(team_id)')
+    .eq('sessions.team_id', teamId)
+  if (error) throw error
+  // Το nested αντικείμενο sessions χρειάστηκε μόνο για το φιλτράρισμα.
+  const flat = (data ?? []).map(({ sessions, ...row }) => row)
+  writeLocal(`cache:session_drills_all:${teamId}`, flat)
+  return flat
+}
+
+export function cachedTeamSessionDrills(teamId) {
+  return readLocal(`cache:session_drills_all:${teamId}`, []) ?? []
 }
 
 export async function setAttendance(sessionId, playerId, status) {
@@ -249,8 +292,9 @@ export async function fetchDrills(teamId) {
     .order('is_preset', { ascending: false })
     .order('title')
   if (error) throw error
-  writeLocal(keys.drills(teamId), data)
-  return data
+  const merged = mergePending('drills', data ?? [], cachedDrills(teamId))
+  writeLocal(keys.drills(teamId), merged)
+  return merged
 }
 
 export function saveDrill(teamId, input) {
@@ -294,8 +338,11 @@ export async function fetchSessionDrills(sessionId) {
     .order('phase')
     .order('order_index')
   if (error) throw error
-  writeLocal(keys.sessionDrills(sessionId), data)
-  return data
+  const merged = mergePending('session_drills', data ?? [], cachedSessionDrills(sessionId)).sort(
+    (a, b) => a.phase - b.phase || a.order_index - b.order_index,
+  )
+  writeLocal(keys.sessionDrills(sessionId), merged)
+  return merged
 }
 
 export function addSessionDrill(sessionId, drill, phase) {
@@ -331,6 +378,33 @@ export function removeSessionDrill(sessionId, id) {
   writeLocal(keys.sessionDrills(sessionId), next)
   queueDelete('session_drills', id)
   return next
+}
+
+/**
+ * Αντιγράφει ένα παλιό πλάνο πάνω στη σημερινή προπόνηση.
+ * Οι γραμμές παίρνουν νέα id: το παλιό πλάνο μένει άθικτο στο ιστορικό.
+ */
+export function replaceSessionPlan(targetSessionId, sourceItems) {
+  cachedSessionDrills(targetSessionId).forEach((row) => {
+    enqueue({ table: 'session_drills', kind: 'delete', row: { id: row.id } })
+  })
+
+  const rows = sourceItems.map((item) => ({
+    id: crypto.randomUUID(),
+    session_id: targetSessionId,
+    drill_id: item.drill_id ?? null,
+    title: item.title,
+    phase: item.phase,
+    order_index: item.order_index,
+    duration_min: item.duration_min,
+    intensity: item.intensity,
+    notes: item.notes ?? null,
+  }))
+
+  writeLocal(keys.sessionDrills(targetSessionId), rows)
+  rows.forEach((row) => enqueue({ table: 'session_drills', kind: 'upsert', row, onConflict: 'id' }))
+  flushOutbox().catch(() => {})
+  return rows
 }
 
 /** Αναδιάταξη μέσα σε μια φάση (κουμπιά ↑ / ↓). */

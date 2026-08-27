@@ -1,4 +1,14 @@
-import { MousePointer2, Circle, Triangle, Dot, MoveUpRight, Eraser, Undo2, Trash } from 'lucide-react'
+import {
+  MousePointer2,
+  Circle,
+  Triangle,
+  Dot,
+  MoveUpRight,
+  Eraser,
+  Undo2,
+  Trash,
+  Users,
+} from 'lucide-react'
 
 export const TOOLS = [
   { id: 'select', label: 'Μετακίνηση', icon: MousePointer2 },
@@ -11,7 +21,7 @@ export const TOOLS = [
   { id: 'erase', label: 'Σβήσιμο', icon: Eraser },
 ]
 
-export default function BoardToolbar({ tool, onTool, onUndo, onClear, canUndo }) {
+export default function BoardToolbar({ tool, onTool, onUndo, onClear, onFormation, canUndo }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="no-scrollbar flex gap-2 overflow-x-auto">
@@ -33,6 +43,13 @@ export default function BoardToolbar({ tool, onTool, onUndo, onClear, canUndo })
           </button>
         ))}
       </div>
+
+      <button
+        onClick={onFormation}
+        className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-brand bg-brand/15 text-sm font-bold text-brand"
+      >
+        <Users size={18} /> Σχηματισμός με ένα tap
+      </button>
 
       <div className="flex gap-2">
         <button

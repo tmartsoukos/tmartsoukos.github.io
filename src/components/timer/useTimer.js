@@ -10,9 +10,19 @@ import { beep, startTone, unlockAudio, whistle } from '../../lib/audio'
 // ο χρόνος επιστρέφει σωστός μόλις η οθόνη ξαναανοίξει.
 // ============================================================
 
-export default function useTimer({ mode = 'stopwatch', work = 30, rest = 15, sets = 6 }) {
+export default function useTimer({
+  mode = 'stopwatch',
+  work = 30,
+  rest = 15,
+  sets = 6,
+  onComplete = null,
+}) {
   const [running, setRunning] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+
+  // Σε ref ώστε η αλλαγή της συνάρτησης να μην ξαναστήνει το ρολόι
+  const completeRef = useRef(onComplete)
+  completeRef.current = onComplete
 
   const startedAt = useRef(null)
   const accumulated = useRef(0)
@@ -60,6 +70,7 @@ export default function useTimer({ mode = 'stopwatch', work = 30, rest = 15, set
         whistle()
         lastPhase.current = 'done'
         setRunning(false)
+        completeRef.current?.()
       }
       return
     }

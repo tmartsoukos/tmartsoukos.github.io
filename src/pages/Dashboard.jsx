@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ClipboardList, Shuffle, ListChecks, Timer, BarChart3, LayoutGrid } from 'lucide-react'
+import {
+  ClipboardList,
+  Shuffle,
+  ListChecks,
+  Timer,
+  BarChart3,
+  LayoutGrid,
+  History as HistoryIcon,
+  Users,
+} from 'lucide-react'
 import TopBar from '../components/layout/TopBar'
 import Card from '../components/ui/Card'
 import { useTeam } from '../context/TeamContext'
@@ -22,6 +31,8 @@ const ACTIONS = [
   { to: '/board', label: 'Σχεδιαστήριο', icon: LayoutGrid },
   { to: '/timer', label: 'Χρονόμετρο', icon: Timer },
   { to: '/stats', label: 'Στατιστικά', icon: BarChart3 },
+  { to: '/history', label: 'Ιστορικό', icon: HistoryIcon },
+  { to: '/roster', label: 'Ρόστερ', icon: Users },
 ]
 
 export default function Dashboard() {

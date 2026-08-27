@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import BoardToolbar from './BoardToolbar'
+import FormationSheet from './FormationSheet'
 import { drawPitch } from './pitch'
 import { drawArrow, drawObject, hitArrow, hitObject } from './boardDraw'
+import { buildFormationObjects } from './formations'
 
 const EMPTY = { objects: [], arrows: [] }
 const MAX_HISTORY = 30
 
-export default function TacticalBoard({ value, onChange }) {
+export default function TacticalBoard({ value, onChange, players = [] }) {
   const canvasRef = useRef(null)
   const wrapRef = useRef(null)
   const dragRef = useRef(null)
@@ -15,6 +17,7 @@ export default function TacticalBoard({ value, onChange }) {
   const [tool, setTool] = useState('select')
   const [draft, setDraft] = useState(null) // βέλος που σχεδιάζεται αυτή τη στιγμή
   const [history, setHistory] = useState([])
+  const [formationOpen, setFormationOpen] = useState(false)
 
   // ----------------------------------------------------------
   // Σχεδίαση
@@ -76,6 +79,16 @@ export default function TacticalBoard({ value, onChange }) {
 
   function clearAll() {
     commit(EMPTY)
+  }
+
+  // Ο σχηματισμός αντικαθιστά μόνο τους παίκτες της ίδιας ομάδας:
+  // κώνοι, μπάλες και βέλη μένουν στη θέση τους.
+  function applyFormation(formation, team, withNames) {
+    const others = data.objects.filter((o) => !(o.type === 'player' && o.team === team))
+    commit({
+      ...data,
+      objects: [...others, ...buildFormationObjects(formation, team, players, withNames)],
+    })
   }
 
   // ----------------------------------------------------------
@@ -208,7 +221,15 @@ export default function TacticalBoard({ value, onChange }) {
         onTool={setTool}
         onUndo={undo}
         onClear={clearAll}
+        onFormation={() => setFormationOpen(true)}
         canUndo={history.length > 0}
+      />
+
+      <FormationSheet
+        open={formationOpen}
+        onClose={() => setFormationOpen(false)}
+        players={players}
+        onApply={applyFormation}
       />
     </div>
   )

@@ -5,7 +5,9 @@ import { useTeam } from './context/TeamContext'
 import AppShell from './components/layout/AppShell'
 import Button from './components/ui/Button'
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
+import History from './pages/History'
 import Attendance from './pages/Attendance'
 import AttendanceStats from './pages/AttendanceStats'
 import Roster from './pages/Roster'
@@ -26,10 +28,14 @@ function FullScreenLoader() {
 }
 
 export default function App() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, recovery } = useAuth()
   const { activeTeamId, loading: teamLoading, refreshTeam } = useTeam()
 
   if (authLoading) return <FullScreenLoader />
+
+  // Ο χρήστης ήρθε από τον σύνδεσμο επαναφοράς κωδικού: η οθόνη
+  // αυτή προηγείται όλων, ανεξάρτητα από τη διαδρομή.
+  if (user && recovery) return <ResetPassword />
 
   // Χωρίς σύνδεση δεν υπάρχει τίποτα άλλο διαθέσιμο.
   if (!user) {
@@ -67,6 +73,7 @@ export default function App() {
         <Route path="roster" element={<Roster />} />
         <Route path="split" element={<Split />} />
         <Route path="session" element={<SessionBuilder />} />
+        <Route path="history" element={<History />} />
         <Route path="drills" element={<DrillLibrary />} />
         <Route path="drills/:drillId/board" element={<DrillBoard />} />
         <Route path="board" element={<Board />} />

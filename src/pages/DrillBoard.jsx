@@ -4,7 +4,7 @@ import { Check, Save } from 'lucide-react'
 import TopBar from '../components/layout/TopBar'
 import TacticalBoard from '../components/board/TacticalBoard'
 import { useTeam } from '../context/TeamContext'
-import { cachedDrills, fetchDrills, saveDrill } from '../lib/repo'
+import { cachedDrills, cachedPlayers, fetchDrills, fetchPlayers, saveDrill } from '../lib/repo'
 
 export default function DrillBoard() {
   const { drillId } = useParams()
@@ -14,10 +14,14 @@ export default function DrillBoard() {
   const [drills, setDrills] = useState(() => cachedDrills(activeTeamId))
   const [board, setBoard] = useState(null)
   const [saved, setSaved] = useState(false)
+  const [players, setPlayers] = useState(() => cachedPlayers(activeTeamId))
 
   useEffect(() => {
     fetchDrills(activeTeamId)
       .then(setDrills)
+      .catch(() => {})
+    fetchPlayers(activeTeamId)
+      .then(setPlayers)
       .catch(() => {})
   }, [activeTeamId])
 
@@ -61,7 +65,7 @@ export default function DrillBoard() {
       />
 
       <div className="px-4 py-4">
-        {board !== null && <TacticalBoard value={board} onChange={setBoard} />}
+        {board !== null && <TacticalBoard value={board} onChange={setBoard} players={players} />}
         <p className="mt-3 text-center text-xs text-muted">
           Κίνηση παίκτη = συνεχής γραμμή · Πάσα = διακεκομμένη. Το σχέδιο αποθηκεύεται μέσα στην άσκηση.
         </p>

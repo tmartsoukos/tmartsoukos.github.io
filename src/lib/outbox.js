@@ -47,6 +47,22 @@ export function pendingCount() {
 }
 
 /**
+ * Ποιες γραμμές ενός πίνακα περιμένουν ακόμη να σταλούν.
+ * Χρησιμεύει ώστε μια απάντηση του server να μην πατήσει πάνω σε
+ * νεότερη τοπική αλλαγή που δεν έχει προλάβει να συγχρονιστεί.
+ */
+export function pendingOps(table) {
+  const upserts = new Set()
+  const deletes = new Set()
+  listOutbox().forEach((op) => {
+    if (op.table !== table) return
+    if (op.kind === 'delete') deletes.add(op.row.id)
+    else upserts.add(op.row.id)
+  })
+  return { upserts, deletes }
+}
+
+/**
  * Προσθέτει μια αλλαγή στην ουρά.
  * @param {{table: string, kind: 'upsert'|'delete', row: object, onConflict?: string}} op
  */

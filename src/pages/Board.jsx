@@ -8,7 +8,7 @@ import Button from '../components/ui/Button'
 import DrillForm from '../components/drills/DrillForm'
 import { useTeam } from '../context/TeamContext'
 import { readLocal, writeLocal } from '../lib/db'
-import { saveDrill } from '../lib/repo'
+import { cachedPlayers, fetchPlayers, saveDrill } from '../lib/repo'
 
 const SCRATCH_KEY = 'board:scratch'
 const EMPTY = { objects: [], arrows: [] }
@@ -21,10 +21,17 @@ export default function Board() {
   const navigate = useNavigate()
   const [board, setBoard] = useState(() => readLocal(SCRATCH_KEY, EMPTY) ?? EMPTY)
   const [saving, setSaving] = useState(false)
+  const [players, setPlayers] = useState(() => cachedPlayers(activeTeamId))
 
   useEffect(() => {
     writeLocal(SCRATCH_KEY, board)
   }, [board])
+
+  useEffect(() => {
+    fetchPlayers(activeTeamId)
+      .then(setPlayers)
+      .catch(() => {})
+  }, [activeTeamId])
 
   function onSaveAsDrill(form) {
     saveDrill(activeTeamId, { ...form, board_data: board })
@@ -50,7 +57,7 @@ export default function Board() {
       />
 
       <div className="px-4 py-4">
-        <TacticalBoard value={board} onChange={setBoard} />
+        <TacticalBoard value={board} onChange={setBoard} players={players} />
 
         <p className="mt-3 text-center text-xs text-muted">
           Κίνηση παίκτη = συνεχής γραμμή · Πάσα = διακεκομμένη.
