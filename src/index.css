@@ -1,0 +1,85 @@
+@import 'tailwindcss';
+
+/* ============================================================
+   Design tokens
+   Σκούρα παλέτα υψηλής αντίθεσης: η εφαρμογή χρησιμοποιείται
+   στο γήπεδο, συχνά με τον ήλιο πάνω στην οθόνη.
+   ============================================================ */
+@theme {
+  --color-bg: #0b0f14;
+  --color-surface: #151b23;
+  --color-surface-2: #1d2530;
+  --color-line: #2b3644;
+  --color-text: #f8fafc;
+  --color-muted: #94a3b8;
+
+  --color-brand: #22c55e;
+  --color-brand-dark: #16a34a;
+
+  /* Καταστάσεις παρουσίας */
+  --color-present: #22c55e;
+  --color-absent: #ef4444;
+  --color-excused: #eab308;
+
+  /* Ομάδες στο χωρισμό */
+  --color-team-a: #22c55e;
+  --color-team-b: #f97316;
+
+  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ============================================================
+   Βασικά στυλ
+   ============================================================ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* Το κείμενο δεν επιλέγεται κατά λάθος στα γρήγορα tap του γηπέδου */
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+button {
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+/* Χώρος για την κάτω μπάρα πλοήγησης και το safe area του iPhone */
+.pb-nav {
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Ψηφία χρονομέτρου με σταθερό πλάτος ώστε να μην «χοροπηδά» ο χρόνος */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ο καμβάς της τακτικής δεν πρέπει να σκρολάρει τη σελίδα όταν σχεδιάζουμε */
+.board-canvas {
+  touch-action: none;
+}
+
+/* Απόκρυψη μπάρας κύλισης στα οριζόντια φίλτρα */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
