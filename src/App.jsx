@@ -1,10 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { Loader2, WifiOff } from 'lucide-react'
 import { useAuth } from './context/AuthContext'
 import { useTeam } from './context/TeamContext'
 import AppShell from './components/layout/AppShell'
+import Button from './components/ui/Button'
 import Login from './pages/Login'
-import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
 import Attendance from './pages/Attendance'
 import AttendanceStats from './pages/AttendanceStats'
@@ -13,6 +13,7 @@ import Split from './pages/Split'
 import SessionBuilder from './pages/SessionBuilder'
 import DrillLibrary from './pages/DrillLibrary'
 import DrillBoard from './pages/DrillBoard'
+import Board from './pages/Board'
 import Timer from './pages/Timer'
 import Settings from './pages/Settings'
 
@@ -26,7 +27,7 @@ function FullScreenLoader() {
 
 export default function App() {
   const { user, loading: authLoading } = useAuth()
-  const { teams, loading: teamLoading } = useTeam()
+  const { activeTeamId, loading: teamLoading, refreshTeam } = useTeam()
 
   if (authLoading) return <FullScreenLoader />
 
@@ -42,13 +43,18 @@ export default function App() {
 
   if (teamLoading) return <FullScreenLoader />
 
-  // Συνδεδεμένος αλλά χωρίς ομάδα: δημιουργία ή είσοδος με κωδικό.
-  if (teams.length === 0) {
+  // Πρώτη σύνδεση χωρίς δίκτυο: δεν προλάβαμε να φέρουμε την ομάδα
+  // και δεν υπάρχει τίποτα στην τοπική cache.
+  if (!activeTeamId) {
     return (
-      <Routes>
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="*" element={<Navigate to="/onboarding" replace />} />
-      </Routes>
+      <div className="mx-auto flex min-h-full max-w-sm flex-col items-center justify-center gap-4 px-6 text-center">
+        <WifiOff size={40} className="text-muted" />
+        <p className="font-semibold">Δεν ήταν δυνατή η φόρτωση των δεδομένων.</p>
+        <p className="text-sm text-muted">
+          Χρειάζεται σύνδεση στο διαδίκτυο την πρώτη φορά που ανοίγει η εφαρμογή.
+        </p>
+        <Button onClick={refreshTeam}>Δοκίμασε ξανά</Button>
+      </div>
     )
   }
 
@@ -63,11 +69,11 @@ export default function App() {
         <Route path="session" element={<SessionBuilder />} />
         <Route path="drills" element={<DrillLibrary />} />
         <Route path="drills/:drillId/board" element={<DrillBoard />} />
+        <Route path="board" element={<Board />} />
         <Route path="timer" element={<Timer />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="login" element={<Navigate to="/" replace />} />
-      <Route path="onboarding" element={<Onboarding />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

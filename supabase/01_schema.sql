@@ -8,18 +8,6 @@ create extension if not exists pgcrypto;
 -- Βοηθητικές συναρτήσεις
 -- ------------------------------------------------------------
 
--- Παράγει κωδικό πρόσκλησης 6 χαρακτήρων (χωρίς I, O, 0, 1 για να μην μπερδεύονται)
-create or replace function public.generate_invite_code()
-returns text
-language sql
-volatile
-as $$
-  select string_agg(
-           substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
-                  floor(random() * 32)::int + 1, 1), '')
-  from generate_series(1, 6);
-$$;
-
 -- Ενημερώνει αυτόματα το updated_at σε κάθε UPDATE
 create or replace function public.touch_updated_at()
 returns trigger
@@ -32,59 +20,22 @@ end;
 $$;
 
 -- ------------------------------------------------------------
--- teams — οι ομάδες
+-- teams — η κοινή ομάδα
+-- Η εφαρμογή δουλεύει με μία μοναδική ομάδα: κάθε συνδεδεμένος
+-- προπονητής βλέπει και αλλάζει τα ίδια δεδομένα.
 -- ------------------------------------------------------------
 create table if not exists public.teams (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  invite_code text unique,
-  created_by  uuid not null references auth.users(id) on delete cascade,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
-
--- Δημιουργεί μοναδικό invite code πριν την εισαγωγή (με επανάληψη σε σύγκρουση)
-create or replace function public.set_invite_code()
-returns trigger
-language plpgsql
-as $$
-declare
-  c text;
-begin
-  if new.invite_code is null then
-    loop
-      c := public.generate_invite_code();
-      exit when not exists (select 1 from public.teams where invite_code = c);
-    end loop;
-    new.invite_code := c;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_teams_invite_code on public.teams;
-create trigger trg_teams_invite_code
-  before insert on public.teams
-  for each row execute function public.set_invite_code();
 
 drop trigger if exists trg_teams_touch on public.teams;
 create trigger trg_teams_touch
   before update on public.teams
   for each row execute function public.touch_updated_at();
-
--- ------------------------------------------------------------
--- team_members — ποιοι προπονητές διαχειρίζονται κάθε ομάδα
--- ------------------------------------------------------------
-create table if not exists public.team_members (
-  team_id      uuid not null references public.teams(id) on delete cascade,
-  user_id      uuid not null references auth.users(id) on delete cascade,
-  role         text not null default 'assistant' check (role in ('head_coach', 'assistant')),
-  display_name text,
-  joined_at    timestamptz not null default now(),
-  primary key (team_id, user_id)
-);
-
-create index if not exists idx_team_members_user on public.team_members(user_id);
 
 -- ------------------------------------------------------------
 -- players — το ρόστερ

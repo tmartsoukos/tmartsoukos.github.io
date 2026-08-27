@@ -1,17 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { readLocal, writeLocal, keys } from '../lib/db'
+import { readLocal, writeLocal } from '../lib/db'
 import { useAuth } from './AuthContext'
 
 const TeamContext = createContext(null)
 
 const WATCHED_TABLES = ['players', 'sessions', 'attendance', 'session_drills', 'splits']
+const CACHE_KEY = 'cache:team'
 
+// Η εφαρμογή δουλεύει με μία κοινή ομάδα: όποιος συνδεθεί βλέπει
+// και αλλάζει τα ίδια δεδομένα. Η ομάδα δημιουργείται μόνη της
+// στην πρώτη σύνδεση, μέσω του RPC default_team().
 export function TeamProvider({ children }) {
   const { user } = useAuth()
-  const [teams, setTeams] = useState(() => readLocal('cache:teams', []) ?? [])
-  const [activeTeamId, setActiveTeamId] = useState(() => readLocal(keys.activeTeam(), null))
-  const [members, setMembers] = useState([])
+  const [team, setTeam] = useState(() => readLocal(CACHE_KEY, null))
   const [loading, setLoading] = useState(true)
 
   // Μετρητές που αυξάνονται σε κάθε αλλαγή από άλλη συσκευή.
@@ -20,76 +22,37 @@ export function TeamProvider({ children }) {
     Object.fromEntries(WATCHED_TABLES.map((t) => [t, 0])),
   )
 
-  const refreshTeams = useCallback(async () => {
+  const refreshTeam = useCallback(async () => {
     if (!user) {
-      setTeams([])
+      setTeam(null)
       setLoading(false)
-      return []
+      return null
     }
     try {
-      const { data, error } = await supabase
-        .from('team_members')
-        .select('role, team:teams(*)')
-        .eq('user_id', user.id)
+      const { data, error } = await supabase.rpc('default_team')
       if (error) throw error
-
-      const list = (data ?? [])
-        .filter((row) => row.team)
-        .map((row) => ({ ...row.team, role: row.role }))
-
-      setTeams(list)
-      writeLocal('cache:teams', list)
-      return list
+      const row = Array.isArray(data) ? data[0] : data
+      if (row) {
+        setTeam(row)
+        writeLocal(CACHE_KEY, row)
+      }
+      return row
     } catch {
-      // Εκτός σύνδεσης: μένουμε στην τοπική εικόνα.
-      return readLocal('cache:teams', []) ?? []
+      // Εκτός σύνδεσης: συνεχίζουμε με την τοπική εικόνα.
+      return readLocal(CACHE_KEY, null)
     } finally {
       setLoading(false)
     }
   }, [user])
 
   useEffect(() => {
-    refreshTeams()
-  }, [refreshTeams])
+    refreshTeam()
+  }, [refreshTeam])
 
-  // Αν δεν υπάρχει επιλεγμένη ομάδα (ή έχει πάψει να ισχύει), πάρε την πρώτη.
   useEffect(() => {
-    if (teams.length === 0) return
-    if (!activeTeamId || !teams.some((t) => t.id === activeTeamId)) {
-      setActiveTeamId(teams[0].id)
-      writeLocal(keys.activeTeam(), teams[0].id)
-    }
-  }, [teams, activeTeamId])
+    if (!team?.id || !user) return
 
-  const activeTeam = useMemo(
-    () => teams.find((t) => t.id === activeTeamId) ?? null,
-    [teams, activeTeamId],
-  )
-
-  // Μέλη της ενεργής ομάδας
-  useEffect(() => {
-    if (!activeTeamId) {
-      setMembers([])
-      return
-    }
-    let active = true
-    supabase
-      .from('team_members')
-      .select('user_id, role, display_name, joined_at')
-      .eq('team_id', activeTeamId)
-      .then(({ data }) => {
-        if (active && data) setMembers(data)
-      })
-    return () => {
-      active = false
-    }
-  }, [activeTeamId])
-
-  // Realtime: κοινή διαχείριση με τον βοηθό προπονητή
-  useEffect(() => {
-    if (!activeTeamId || !user) return
-
-    const channel = supabase.channel(`team:${activeTeamId}`)
+    const channel = supabase.channel(`team:${team.id}`)
     WATCHED_TABLES.forEach((table) => {
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
         setRevisions((prev) => ({ ...prev, [table]: prev[table] + 1 }))
@@ -100,51 +63,26 @@ export function TeamProvider({ children }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeTeamId, user])
+  }, [team?.id, user])
 
   const value = useMemo(
     () => ({
-      teams,
-      activeTeam,
-      activeTeamId,
-      members,
+      activeTeam: team,
+      activeTeamId: team?.id ?? null,
       loading,
       revisions,
-      role: activeTeam?.role ?? null,
-      isHeadCoach: activeTeam?.role === 'head_coach',
+      refreshTeam,
 
-      selectTeam(id) {
-        setActiveTeamId(id)
-        writeLocal(keys.activeTeam(), id)
+      async renameTeam(name) {
+        const trimmed = name.trim()
+        if (!trimmed || !team) return
+        const next = { ...team, name: trimmed }
+        setTeam(next)
+        writeLocal(CACHE_KEY, next)
+        await supabase.from('teams').update({ name: trimmed }).eq('id', team.id)
       },
-
-      async createTeam(name) {
-        const { data, error } = await supabase.rpc('create_team', { p_name: name })
-        if (error) throw error
-        const list = await refreshTeams()
-        const created = Array.isArray(data) ? data[0] : data
-        if (created?.id) {
-          setActiveTeamId(created.id)
-          writeLocal(keys.activeTeam(), created.id)
-        }
-        return list
-      },
-
-      async joinTeam(code) {
-        const { data, error } = await supabase.rpc('join_team_by_code', { p_code: code })
-        if (error) throw error
-        const list = await refreshTeams()
-        const joined = Array.isArray(data) ? data[0] : data
-        if (joined?.id) {
-          setActiveTeamId(joined.id)
-          writeLocal(keys.activeTeam(), joined.id)
-        }
-        return list
-      },
-
-      refreshTeams,
     }),
-    [teams, activeTeam, activeTeamId, members, loading, revisions, refreshTeams],
+    [team, loading, revisions, refreshTeam],
   )
 
   return <TeamContext.Provider value={value}>{children}</TeamContext.Provider>

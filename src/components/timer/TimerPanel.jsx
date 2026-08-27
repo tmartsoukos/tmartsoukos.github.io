@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Play, Pause, RotateCcw, SkipForward } from 'lucide-react'
+import { Play, Pause, RotateCcw, SkipForward, Pencil } from 'lucide-react'
 import useTimer from './useTimer'
-import IntervalConfig from './IntervalConfig'
+import IntervalPicker from './IntervalPicker'
 import { formatClock } from '../../lib/dates'
 import { readLocal, writeLocal, keys } from '../../lib/db'
 
@@ -24,6 +24,7 @@ export default function TimerPanel({ presetLabel = null, presetMinutes = null })
   const [config, setConfig] = useState(
     () => readLocal(keys.timerConfig(), null) ?? { work: 30, rest: 15, sets: 6 },
   )
+  const [picking, setPicking] = useState(false)
 
   useEffect(() => {
     writeLocal(keys.timerConfig(), config)
@@ -39,6 +40,12 @@ export default function TimerPanel({ presetLabel = null, presetMinutes = null })
 
   const timer = useTimer({ mode, ...config })
   const value = mode === 'interval' ? timer.remaining : timer.elapsed
+  const editable = mode === 'interval'
+
+  function applyConfig(next) {
+    setConfig(next)
+    timer.reset()
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -52,15 +59,15 @@ export default function TimerPanel({ presetLabel = null, presetMinutes = null })
         {[
           ['stopwatch', 'Χρονόμετρο'],
           ['interval', 'Διαλειμματικό'],
-        ].map(([value_, label]) => (
+        ].map(([id, label]) => (
           <button
-            key={value_}
+            key={id}
             onClick={() => {
               timer.reset()
-              setMode(value_)
+              setMode(id)
             }}
             className={`min-h-12 flex-1 rounded-lg text-sm font-bold ${
-              mode === value_ ? 'bg-brand text-bg' : 'text-muted'
+              mode === id ? 'bg-brand text-bg' : 'text-muted'
             }`}
           >
             {label}
@@ -68,21 +75,30 @@ export default function TimerPanel({ presetLabel = null, presetMinutes = null })
         ))}
       </div>
 
-      <div className="rounded-3xl border border-line bg-surface py-8 text-center">
+      {/* Στο διαλειμματικό, το πάτημα πάνω στον χρόνο ανοίγει τα καρουζέλ */}
+      <button
+        type="button"
+        disabled={!editable}
+        onClick={() => setPicking(true)}
+        className="rounded-3xl border border-line bg-surface py-8 text-center disabled:cursor-default"
+      >
         <p className={`text-sm font-black tracking-widest ${PHASE_COLOR[timer.phase]}`}>
           {PHASE_LABEL[timer.phase]}
         </p>
         <p className="text-7xl leading-none font-black tnum">{formatClock(value)}</p>
-        {mode === 'interval' && (
-          <p className="mt-2 text-sm text-muted tnum">
-            Σετ {timer.currentSet}/{timer.sets}
-          </p>
-        )}
-      </div>
 
-      {mode === 'interval' && !timer.running && timer.elapsed === 0 && (
-        <IntervalConfig config={config} onChange={setConfig} />
-      )}
+        {editable && (
+          <>
+            <p className="mt-2 text-sm text-muted tnum">
+              Σετ {timer.currentSet}/{timer.sets}
+            </p>
+            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-bold text-muted">
+              <Pencil size={12} />
+              {formatClock(config.work)} / {formatClock(config.rest)} × {config.sets}
+            </span>
+          </>
+        )}
+      </button>
 
       <div className="flex gap-3">
         <button
@@ -93,7 +109,7 @@ export default function TimerPanel({ presetLabel = null, presetMinutes = null })
           {timer.running ? 'Παύση' : 'Έναρξη'}
         </button>
 
-        {mode === 'interval' && (
+        {editable && (
           <button
             onClick={timer.skip}
             aria-label="Επόμενο διάστημα"
@@ -111,6 +127,13 @@ export default function TimerPanel({ presetLabel = null, presetMinutes = null })
           <RotateCcw size={26} />
         </button>
       </div>
+
+      <IntervalPicker
+        open={picking}
+        onClose={() => setPicking(false)}
+        config={config}
+        onApply={applyConfig}
+      />
     </div>
   )
 }
